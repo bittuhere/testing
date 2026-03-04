@@ -102,9 +102,14 @@
 
         // LISTENERS
         socket.on('init', (data) => {
-            mySymbol = data.symbol;
-            document.getElementById('statusMsg').innerText = mySymbol === 'X' ? "Waiting for Opponent..." : "Connected! X starts.";
-        });
+    mySymbol = data.symbol;
+    if (mySymbol === 'X') {
+        document.getElementById('statusMsg').innerText = "Room Created! Waiting for Opponent...";
+    } else {
+        document.getElementById('statusMsg').innerText = "Connected! Player X's Turn.";
+    }
+});
+
 
         socket.on('updateBoard', (data) => {
             data.board.forEach((val, i) => {
