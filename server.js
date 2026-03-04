@@ -6,51 +6,58 @@ const cors = require('cors');
 
 const app = express();
 app.use(cors({ origin: "*" })); 
-app.use(express.json());
-
-// Status check ke liye
-app.get('/', (req, res) => {
-    res.send("<h1>Tic-Tac-Toe Server is Running!</h1>");
-});
 
 const server = http.createServer(app);
-const io = new Server(server, { 
-    cors: { origin: "*", methods: ["GET", "POST"] } 
-});
+const io = new Server(server, { cors: { origin: "*" } });
 
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB Connected!"))
-  .catch(err => console.error("DB Error:", err));
+mongoose.connect(process.env.MONGO_URI).then(() => console.log("MongoDB Connected!"));
 
 let rooms = {};
 
 io.on('connection', (socket) => {
-    // Agar ye logs mein aaye, matlab Naya Code chal raha hai
-    console.log('--- NEW CONNECTION DETECTED ---');
-    console.log('ID:', socket.id);
-
     socket.on('joinRoom', ({ roomId, playerName }) => {
         socket.join(roomId);
         if (!rooms[roomId]) {
-            rooms[roomId] = { board: Array(9).fill(""), players: {}, turn: 'X', status: 'playing' };
+            rooms[roomId] = { board: Array(9).fill(""), players: {}, turn: 'X', status: 'waiting' };
         }
         
         const symbol = Object.keys(rooms[roomId].players).length === 0 ? 'X' : 'O';
         rooms[roomId].players[socket.id] = { name: playerName, symbol };
         
-        // Frontend ko signal bhejna taaki "Waiting" hat jaye
+        // Sirf aane wale ko uska symbol batana
         socket.emit('init', { symbol, board: rooms[roomId].board });
-        console.log(`PLAYER JOINED: ${playerName} (Room: ${roomId}, Symbol: ${symbol})`);
+
+        // FIX: Agar 2 players ho gaye hain, toh poore room ko 'Game Start' bolo!
+        if (Object.keys(rooms[roomId].players).length === 2) {
+            rooms[roomId].status = 'playing';
+            io.to(roomId).emit('updateBoard', { 
+                board: rooms[roomId].board, 
+                turn: rooms[roomId].turn, 
+                status: 'playing' 
+            });
+            console.log(`Game Started in Room: ${roomId}`);
+        }
     });
 
     socket.on('makeMove', ({ roomId, index }) => {
         const room = rooms[roomId];
-        if (room && room.board[index] === "") {
+        if (room && room.status === 'playing' && room.board[index] === "") {
             const player = room.players[socket.id];
             if (player && room.turn === player.symbol) {
                 room.board[index] = player.symbol;
                 room.turn = room.turn === 'X' ? 'O' : 'X';
-                io.to(roomId).emit('updateBoard', { board: room.board, turn: room.turn, status: 'playing' });
+                
+                // Winner Check (Simple logic)
+                const winPatterns = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+                let winner = null;
+                for (let p of winPatterns) {
+                    if (room.board[p[0]] && room.board[p[0]] === room.board[p[1]] && room.board[p[0]] === room.board[p[2]]) {
+                        winner = room.board[p[0]];
+                    }
+                }
+
+                let status = winner ? 'finished' : (room.board.includes("") ? 'playing' : 'draw');
+                io.to(roomId).emit('updateBoard', { board: room.board, turn: room.turn, status, winner });
             }
         }
     });
@@ -60,5 +67,4 @@ io.on('connection', (socket) => {
     });
 });
 
-const PORT = process.env.PORT || 10000;
-server.listen(PORT, () => console.log(`Server live on port ${PORT}`));
+server.listen(process.env.PORT || 10000);
