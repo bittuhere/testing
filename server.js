@@ -9,6 +9,11 @@ app.use(express.json());
 app.post('/send-email', async (req, res) => {
     const { userEmail, subject, message } = req.body;
 
+    // Check karein ki variables mil rahe hain ya nahi
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+        return res.status(500).send({ message: "Config Missing" });
+    }
+
     const transporter = nodemailer.createTransport({
         service: 'gmail',
         auth: {
@@ -18,20 +23,22 @@ app.post('/send-email', async (req, res) => {
     });
 
     const mailOptions = {
-        from: process.env.EMAIL_USER, 
-        to: process.env.EMAIL_USER, // Hamesha aapko hi milega
-        replyTo: userEmail,         // User ka email taaki aap reply kar sakein
-        subject: `New Message: ${subject}`,
-        text: `Aapko ek naya message mila hai!\n\nSender's Email: ${userEmail}\n\nMessage:\n${message}`
+        from: process.env.EMAIL_USER,
+        to: process.env.EMAIL_USER, 
+        replyTo: userEmail,
+        subject: `New: ${subject}`,
+        text: `From: ${userEmail}\n\nMessage:\n${message}`
     };
 
     try {
         await transporter.sendMail(mailOptions);
+        console.log("Email Sent Successfully!");
         res.status(200).send({ message: "Sent" });
     } catch (error) {
-        console.log(error);
-        res.status(500).send({ message: "Failed" });
+        console.error("Nodemailer Error:", error);
+        res.status(500).send({ message: "Error in Sending", details: error.message });
     }
 });
 
-app.listen(process.env.PORT || 10000);
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log(`Email Server live on port ${PORT}`));
