@@ -5,15 +5,12 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 
 const app = express();
-
-// 1. CORS Fix: Ye line GitHub Pages ko allow karegi
 app.use(cors({ origin: "*" })); 
-
 app.use(express.json());
 
-// 2. "Cannot GET /" Fix: Ab link kholne par message dikhega
+// Status check ke liye
 app.get('/', (req, res) => {
-    res.send("<h1>Server is Running!</h1><p>Socket.io logic is active.</p>");
+    res.send("<h1>Tic-Tac-Toe Server is Running!</h1>");
 });
 
 const server = http.createServer(app);
@@ -28,7 +25,9 @@ mongoose.connect(process.env.MONGO_URI)
 let rooms = {};
 
 io.on('connection', (socket) => {
-    console.log('New User:', socket.id);
+    // Agar ye logs mein aaye, matlab Naya Code chal raha hai
+    console.log('--- NEW CONNECTION DETECTED ---');
+    console.log('ID:', socket.id);
 
     socket.on('joinRoom', ({ roomId, playerName }) => {
         socket.join(roomId);
@@ -39,9 +38,9 @@ io.on('connection', (socket) => {
         const symbol = Object.keys(rooms[roomId].players).length === 0 ? 'X' : 'O';
         rooms[roomId].players[socket.id] = { name: playerName, symbol };
         
-        // 3. Emit Logic: Ye frontend ka "Waiting" hatayega
+        // Frontend ko signal bhejna taaki "Waiting" hat jaye
         socket.emit('init', { symbol, board: rooms[roomId].board });
-        console.log(`${playerName} joined room ${roomId} as ${symbol}`);
+        console.log(`PLAYER JOINED: ${playerName} (Room: ${roomId}, Symbol: ${symbol})`);
     });
 
     socket.on('makeMove', ({ roomId, index }) => {
