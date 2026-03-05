@@ -6,24 +6,29 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.get('/', (req, res) => { res.send("<h1>Email Server is Ready!</h1>"); });
+app.get('/', (req, res) => { res.send("<h1>Mail Server is Ready!</h1>"); });
 
 app.post('/send-email', async (req, res) => {
     const { userEmail, subject, message } = req.body;
 
-    // 1. New Transport Strategy (Port 587 use kar rahe hain)
+    // Aggressive Connection Settings
     const transporter = nodemailer.createTransport({
         host: 'smtp.gmail.com',
         port: 587,
-        secure: false, // Port 587 ke liye false hona chahiye
+        secure: false, // Port 587 ke liye hamesha false
         auth: {
             user: process.env.EMAIL_USER,
             pass: process.env.EMAIL_PASS
         },
         tls: {
-            rejectUnauthorized: false // Certificate issues bypass karne ke liye
+            rejectUnauthorized: false, // Certificate errors ignore karega
+            minVersion: 'TLSv1.2'
         },
-        connectionTimeout: 20000 // Time limit badha di hai (20s)
+        logger: true, // Logs mein details dikhayega
+        debug: true,  // Handshake process dikhayega
+        connectionTimeout: 30000, // 30 seconds wait karega
+        greetingTimeout: 30000,
+        socketTimeout: 30000
     });
 
     const mailOptions = {
@@ -35,8 +40,9 @@ app.post('/send-email', async (req, res) => {
     };
 
     try {
-        await transporter.sendMail(mailOptions);
-        console.log("SUCCESS: Email sent!");
+        console.log("Sending email...");
+        let info = await transporter.sendMail(mailOptions);
+        console.log("SUCCESS: Message sent! ID:", info.messageId);
         res.status(200).send({ message: "Sent" });
     } catch (error) {
         console.error("DETAILED ERROR:", error.message);
@@ -44,4 +50,4 @@ app.post('/send-email', async (req, res) => {
     }
 });
 
-app.listen(process.env.PORT || 10000);
+app.listen(process.env.PORT || 10000, () => console.log("Email server started!"));
