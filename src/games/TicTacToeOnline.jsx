@@ -118,7 +118,7 @@ export default function TicTacToeOnline() {
         setRoomChat((prev) => [...prev.slice(-29), evt])
         sfx.notify()
       } else if (evt.type === 'notice') {
-        toast(evt.text, 'info')
+        toast(evt.message || 'Connected.', 'info')
       }
     })
     sock.on('invite', ({ from, code }) => {
