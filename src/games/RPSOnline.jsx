@@ -71,7 +71,7 @@ export default function RPSOnline() {
     socketRef.current = sock
     sock.on('room:state', (state) => setRoom(state))
     sock.on('room:event', (evt) => {
-      if (evt.type === 'notice') toast(evt.text, 'info')
+      if (evt.type === 'notice') toast(evt.message || 'Connected.', 'info')
     })
     sock.on('invite', ({ from, code }) => {
       confirm({ title: `${from} invited you!`, message: 'Join their Rock Paper Scissors room right now?', confirmText: 'Join now' })
