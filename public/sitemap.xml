@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hash-router SPA: the root is the only server-addressable URL.
+     Sub-pages are reached via client-side routes and canonicalise to the root. -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://bittuhere.github.io/arcade-hub/</loc><priority>1.0</priority><changefreq>weekly</changefreq></url>
+</urlset>

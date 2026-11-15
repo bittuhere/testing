@@ -1,0 +1,5 @@
+# Google AdSense ads.txt — replace ca-pub-PLACEHOLDER with your publisher ID
+# 1) Sign in to https://www.google.com/adsense/
+# 2) Copy the publisher ID (Settings → Account → Account information)
+# 3) Replace the line below and redeploy
+google.com, pub-5449109251750850, DIRECT, f08c47fec0942fa0

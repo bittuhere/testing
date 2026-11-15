@@ -1,0 +1,17 @@
+# dependencies (never commit)
+node_modules/
+server/node_modules/
+
+# local environment (keep .env.example)
+.env
+.env.local
+server/.env
+
+# editor / OS noise
+.DS_Store
+Thumbs.db
+*.log
+
+# production output — built & deployed by GitHub Actions, never committed
+build/
+

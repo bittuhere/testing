@@ -1,0 +1,142 @@
+rules_version = '2';
+// Arcade Hub — Firestore security rules
+// Deploy: Firebase console → Firestore Database → Rules → paste → Publish.
+//
+// Design notes:
+//  • Passwords/hashes (the `secrets` collection) are NEVER client-accessible.
+//    Verification happens on the Render server (/verify-password) with the
+//    service account.
+//  • Leaderboard entries are denormalised (username + avatarColor) so reads
+//    never touch the users collection → public read is safe.
+//  • `users/{uid}` is readable by any signed-in player (friends, presence,
+//    search). It contains email addresses — see "Privacy" in README for the
+//    publicProfile/private profile split recommended before a big launch.
+//  • `usernames/{name}` is publicly readable so signup can check availability
+//    before the account exists. It contains only { uid, createdAt }.
+//  • The operator (usernames anurag / bittuhere) is resolved via the
+//    usernames collection — no custom claims required.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isOperator() {
+      return signedIn() && (
+        get(/databases/$(database)/documents/usernames/anurag).data.uid == request.auth.uid ||
+        get(/databases/$(database)/documents/usernames/bittuhere).data.uid == request.auth.uid
+      );
+    }
+    function isOwner(uid) { return signedIn() && request.auth.uid == uid; }
+
+    // ── Public handle registry (availability checks) ──
+    match /usernames/{name} {
+      allow read: if true;
+      allow create: if isOwner(request.resource.data.uid);
+      allow update, delete: if isOperator();
+    }
+
+    // ── Email → uid index (account recovery) ──
+    match /emailIndex/{email} {
+      allow read, write: if false;      // server-side only
+    }
+
+    // ── Password hashes ──
+    match /secrets/{uid} {
+      allow read, write: if false;      // server-side only (service account)
+    }
+
+    // ── Profiles ──
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create: if isOwner(uid);
+      // Owner may edit own profile but NEVER role/banned/muted/verified/stats-of-others.
+      // Anyone signed in may touch ONLY friendIds (needed for symmetric friend add/remove).
+      allow update: if isOperator()
+        || (isOwner(uid)
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'banned', 'muted', 'verified']))
+        || (signedIn()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['friendIds']));
+      allow delete: if isOperator();
+    }
+
+    // ── Leaderboards ── (entries are denormalised; public read)
+    match /leaderboards/{gameId}/entries/{uid} {
+      allow read: if true;
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.best is number
+        && request.resource.data.best >= 0
+        && request.resource.data.best <= 10000000;
+      allow delete: if isOperator();
+    }
+
+    // ── Chat messages (14-day TTL — enable TTL policy on field `expireAt`) ──
+    // DM channels look like 'dm:uidA::uidB' with the pair sorted — a message is
+    // readable/writable only by its two participants (or the operator).
+    function dmRegex() {
+      return '^dm:(' + request.auth.uid + '::[A-Za-z0-9_-]+|[A-Za-z0-9_-]+::' + request.auth.uid + ')$'
+    }
+    function channelAllowed(channel) {
+      return channel == 'global' || channel.matches(dmRegex())
+    }
+    match /messages/{id} {
+      allow read: if signedIn() && channelAllowed(resource.data.channel);
+      allow create: if signedIn()
+        && request.resource.data.from == request.auth.uid
+        && channelAllowed(request.resource.data.channel)
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 500
+        && request.resource.data.channel is string;
+      // Senders can update only readBy (seen receipts); deletes by sender or operator
+      allow update: if signedIn() && channelAllowed(resource.data.channel)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']);
+      allow delete: if signedIn()
+        && (resource.data.from == request.auth.uid || isOperator());
+    }
+
+    // ── Friend requests & friendships ──
+    match /friendRequests/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.from == request.auth.uid;
+      allow update: if isOperator()
+        || (signedIn() && (resource.data.to == request.auth.uid || resource.data.from == request.auth.uid));
+      allow delete: if isOperator() || (signedIn() && (resource.data.to == request.auth.uid || resource.data.from == request.auth.uid));
+    }
+
+    // ── Friendships live on the user doc (friendIds) — see /users rules ──
+
+    // ── Notifications ──
+    match /notifications/{id} {
+      allow read: if signedIn() && (
+        resource.data.scope == 'global' ||
+        request.auth.uid in resource.data.targets ||
+        isOperator()
+      );
+      allow create: if signedIn()
+        && (request.resource.data.scope != 'global' || isOperator())   // only the operator broadcasts globally
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 120
+        && request.resource.data.body is string
+        && request.resource.data.body.size() <= 500;
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']);
+      allow delete: if isOperator();
+    }
+
+    // ── Site settings (maintenance, announcement) ──
+    match /settings/{doc} {
+      allow read: if true;              // maintenance flag must be readable pre-login
+      allow write: if isOperator();
+    }
+
+    // ── Contact inbox (form submissions) ──
+    match /contactMessages/{id} {
+      allow read: if isOperator();
+      allow create: if true;            // anyone may send a message (validated client-side + honeypot)
+      allow update, delete: if isOperator();
+    }
+
+    // ── Default deny ──
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

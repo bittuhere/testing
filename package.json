@@ -1,0 +1,25 @@
+{
+  "name": "arcade-hub",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Arcade Hub — play Flappy Bird, Pac-Man, Snake, Dino Run, online Tic-Tac-Toe and Rock-Paper-Scissors, browse Fair Copies (PDF library), chat with friends, and compete on global leaderboards.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "crypto-js": "^4.2.0",
+    "firebase": "^12.19.0",
+    "lucide-react": "^1.72.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.18.5",
+    "socket.io-client": "^4.8.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.3.0",
+    "vite": "^8.3.8"
+  }
+}

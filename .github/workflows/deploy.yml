@@ -1,0 +1,51 @@
+# Optional: build Arcade Hub and deploy to GitHub Pages with every push to main.
+# One-time setup: repo Settings → Pages → Source → "GitHub Actions".
+name: Deploy Arcade Hub to Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Client config is public-by-design. Anything set as a repo Variable
+      # (Settings → Secrets and variables → Actions → Variables) overrides the
+      # defaults baked into src/config.js at build time.
+      - run: npm run build
+        env:
+          VITE_FIREBASE_VAPID_KEY: ${{ vars.VITE_FIREBASE_VAPID_KEY }}
+          VITE_APPS_SCRIPT_URL: ${{ vars.VITE_APPS_SCRIPT_URL }}
+          VITE_SOCKET_URL: ${{ vars.VITE_SOCKET_URL }}
+          VITE_ADSENSE_CLIENT: ${{ vars.VITE_ADSENSE_CLIENT }}
+          VITE_ADSENSE_SLOT_HOME: ${{ vars.VITE_ADSENSE_SLOT_HOME }}
+          VITE_ADSENSE_SLOT_GAME: ${{ vars.VITE_ADSENSE_SLOT_GAME }}
+          VITE_ADSENSE_SLOT_LEADERBOARD: ${{ vars.VITE_ADSENSE_SLOT_LEADERBOARD }}
+          VITE_SITE_URL: ${{ vars.VITE_SITE_URL }}
+      - uses: actions/configure-pages@v4
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
