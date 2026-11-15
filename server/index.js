@@ -48,8 +48,28 @@ const { Server } = require('socket.io')
 const crypto = require('crypto')
 
 const PORT = process.env.PORT || 3001
+// Origins must be scheme://host[:port] — NEVER a path. If someone pastes
+// "https://host/path" into the dashboard we silently strip the path (and warn),
+// because an Origin header never carries one; otherwise every browser request
+// fails CORS while the server looks "healthy".
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '*')
-  .split(',').map((s) => s.trim()).filter(Boolean)
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
+  .map((entry) => {
+    if (entry === '*') return entry
+    try {
+      const u = new URL(entry)
+      if (u.pathname !== '/' && u.pathname !== '') {
+        console.warn(`[Arcade Hub] ALLOWED_ORIGINS entry "${entry}" contains a path — using "${u.origin}" instead. Origins never include paths.`)
+        return u.origin
+      }
+      return u.origin
+    } catch {
+      console.warn(`[Arcade Hub] ALLOWED_ORIGINS entry "${entry}" is not a valid URL — keeping it verbatim (likely matches nothing).`)
+      return entry
+    }
+  })
 // Accept either name — the Render setup used FIREBASE_SERVICE_ACCOUNT.
 const SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.FIREBASE_SERVICE_ACCOUNT || ''
 
