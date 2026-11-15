@@ -32,7 +32,7 @@ export const CONFIG = {
   fairCopiesCutoff: 'April 2027', // temporary viewer — removed manually after this date
 
   // ── Multiplayer backend (Node.js on Render) — see server/ ───────────────
-  socketUrl: import.meta.env?.VITE_SOCKET_URL || '',
+  socketUrl: import.meta.env?.VITE_SOCKET_URL || 'https://arcade-hub-bittuhere.onrender.com',
 
   // ── Monetisation ─────────────────────────────────────────────────────────
   adsenseClient: import.meta.env?.VITE_ADSENSE_CLIENT || 'ca-pub-5449109251750850',
