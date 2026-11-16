@@ -34,14 +34,14 @@ jobs:
       # defaults baked into src/config.js at build time.
       - run: npm run build
         env:
-          VITE_FIREBASE_VAPID_KEY: ${{ vars.VITE_FIREBASE_VAPID_KEY }}
-          VITE_APPS_SCRIPT_URL: ${{ vars.VITE_APPS_SCRIPT_URL }}
-          VITE_SOCKET_URL: ${{ vars.VITE_SOCKET_URL }}
-          VITE_ADSENSE_CLIENT: ${{ vars.VITE_ADSENSE_CLIENT }}
-          VITE_ADSENSE_SLOT_HOME: ${{ vars.VITE_ADSENSE_SLOT_HOME }}
-          VITE_ADSENSE_SLOT_GAME: ${{ vars.VITE_ADSENSE_SLOT_GAME }}
-          VITE_ADSENSE_SLOT_LEADERBOARD: ${{ vars.VITE_ADSENSE_SLOT_LEADERBOARD }}
-          VITE_SITE_URL: ${{ vars.VITE_SITE_URL }}
+          VITE_FIREBASE_VAPID_KEY: ${{ vars.VITE_FIREBASE_VAPID_KEY || secrets.VITE_FIREBASE_VAPID_KEY }}
+          VITE_APPS_SCRIPT_URL: ${{ vars.VITE_APPS_SCRIPT_URL || secrets.VITE_APPS_SCRIPT_URL }}
+          VITE_SOCKET_URL: ${{ vars.VITE_SOCKET_URL || secrets.VITE_SOCKET_URL }}
+          VITE_ADSENSE_CLIENT: ${{ vars.VITE_ADSENSE_CLIENT || secrets.VITE_ADSENSE_CLIENT }}
+          VITE_ADSENSE_SLOT_HOME: ${{ vars.VITE_ADSENSE_SLOT_HOME || secrets.VITE_ADSENSE_SLOT_HOME }}
+          VITE_ADSENSE_SLOT_GAME: ${{ vars.VITE_ADSENSE_SLOT_GAME || secrets.VITE_ADSENSE_SLOT_GAME }}
+          VITE_ADSENSE_SLOT_LEADERBOARD: ${{ vars.VITE_ADSENSE_SLOT_LEADERBOARD || secrets.VITE_ADSENSE_SLOT_LEADERBOARD }}
+          VITE_SITE_URL: ${{ vars.VITE_SITE_URL || secrets.VITE_SITE_URL }}
       - uses: actions/configure-pages@v4
       - uses: actions/upload-pages-artifact@v3
         with:

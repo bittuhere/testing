@@ -1,142 +1,199 @@
 rules_version = '2';
-// Arcade Hub — Firestore security rules
-// Deploy: Firebase console → Firestore Database → Rules → paste → Publish.
+// Arcade Hub - Firestore security rules (v3, emulator-verified)
+// Deploy: Firebase Console -> Firestore Database -> Rules -> paste -> Publish.
 //
 // Design notes:
-//  • Passwords/hashes (the `secrets` collection) are NEVER client-accessible.
-//    Verification happens on the Render server (/verify-password) with the
-//    service account.
-//  • Leaderboard entries are denormalised (username + avatarColor) so reads
-//    never touch the users collection → public read is safe.
-//  • `users/{uid}` is readable by any signed-in player (friends, presence,
-//    search). It contains email addresses — see "Privacy" in README for the
-//    publicProfile/private profile split recommended before a big launch.
-//  • `usernames/{name}` is publicly readable so signup can check availability
-//    before the account exists. It contains only { uid, createdAt }.
-//  • The operator (usernames anurag / bittuhere) is resolved via the
-//    usernames collection — no custom claims required.
+//  - Passwords/hashes (the `secrets` collection) and the email->uid index are
+//    NEVER client-accessible. Verification runs server-side (Render, service account).
+//  - Leaderboards store denormalised entries (username + avatarColor) - public read.
+//  - `users/{uid}` is readable by any signed-in player. It contains email addresses;
+//    split public/private profiles before a big public launch.
+//  - `usernames/{name}` is publicly readable (signup availability checks) and
+//    contains only { uid, createdAt }. Doc ids are `^[a-z0-9_]{3,20}$`.
+//  - The operator (usernames `anurag` / `bittuhere`) is resolved via the usernames
+//    collection - no custom claims required. exists() guards are used so a MISSING
+//    operator doc never breaks rule evaluation for everyone else.
+//  - DM channels look like 'dm:<uidA>::<uidB>' (pair sorted client-side) and are
+//    readable/writable ONLY by their two participants (or the operator).
+//  - Chat/notification update rules are limited to `readBy` (seen receipts).
+//  - Messages auto-expire: enable a Firestore TTL policy on `expireAt` (console ->
+//    Firestore -> TTL) - not expressible in these rules.
 
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ?? Helpers ??????????????????????????????????????????????????????????
     function signedIn() { return request.auth != null; }
-    function isOperator() {
-      return signedIn() && (
-        get(/databases/$(database)/documents/usernames/anurag).data.uid == request.auth.uid ||
-        get(/databases/$(database)/documents/usernames/bittuhere).data.uid == request.auth.uid
-      );
-    }
     function isOwner(uid) { return signedIn() && request.auth.uid == uid; }
 
-    // ── Public handle registry (availability checks) ──
-    match /usernames/{name} {
-      allow read: if true;
-      allow create: if isOwner(request.resource.data.uid);
-      allow update, delete: if isOperator();
+    // Operator check with exists() guards - a missing usernames/anurag or
+    // usernames/bittuhere doc must NOT error-out unrelated rule evaluation.
+    function isOperator() {
+      return signedIn() && (
+        (exists(/databases/$(database)/documents/usernames/anurag)
+          && get(/databases/$(database)/documents/usernames/anurag).data.uid == request.auth.uid)
+        ||
+        (exists(/databases/$(database)/documents/usernames/bittuhere)
+          && get(/databases/$(database)/documents/usernames/bittuhere).data.uid == request.auth.uid)
+      );
     }
 
-    // ── Email → uid index (account recovery) ──
+    // DM channels: caller must be one of the two uids embedded in the channel id.
+    // Uses a CONSTANT regex + string compares (dynamic regex arguments cause
+    // evaluation errors in Firestore rules, denying everything silently).
+    function isDmChannel(channel) {
+      return channel.matches('^dm:[A-Za-z0-9_-]+::[A-Za-z0-9_-]+$')
+        && (channel.split('::')[0] == 'dm:' + request.auth.uid
+            || channel.split('::')[1] == request.auth.uid);
+    }
+    function channelAllowed(channel) {
+      return channel == 'global' || isDmChannel(channel);
+    }
+
+    // Symmetric friendIds maintenance: an impostor may only add/remove THEMSELVES
+    // in the other user's friendIds - never arbitrary uids.
+    function onlyMeChangedFriends() {
+      let before = resource.data.get('friendIds', []);
+      let after = request.resource.data.get('friendIds', []);
+      let added = after.removeAll(before);
+      let removed = before.removeAll(after);
+      return added.hasOnly([request.auth.uid]) && removed.hasOnly([request.auth.uid]);
+    }
+
+    // ?? Public handle registry (availability checks + search) ??
+    match /usernames/{name} {
+      allow read: if true;
+      allow create: if isOwner(request.resource.data.uid)
+        && name.matches('^[a-z0-9_]{3,20}$')
+        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+        && request.resource.data.uid is string
+        && request.resource.data.uid.size() <= 128;
+      allow update: if isOperator()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid', 'createdAt']);
+      allow delete: if isOperator();
+    }
+
+    // ?? Email -> uid index (account recovery) ??
     match /emailIndex/{email} {
       allow read, write: if false;      // server-side only
     }
 
-    // ── Password hashes ──
+    // ?? Password hashes ??
     match /secrets/{uid} {
       allow read, write: if false;      // server-side only (service account)
     }
 
-    // ── Profiles ──
+    // ?? Profiles ??
     match /users/{uid} {
       allow read: if signedIn();
-      allow create: if isOwner(uid);
-      // Owner may edit own profile but NEVER role/banned/muted/verified/stats-of-others.
-      // Anyone signed in may touch ONLY friendIds (needed for symmetric friend add/remove).
+      allow create: if isOwner(uid)
+        && request.resource.data.username is string
+        && request.resource.data.username.size() <= 20;
+      // Owner may edit own profile but NEVER role/banned/muted/verified.
+      // A signed-in friend-add/remove flow may touch ONLY friendIds, and only with themselves.
       allow update: if isOperator()
         || (isOwner(uid)
             && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'banned', 'muted', 'verified']))
         || (signedIn()
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['friendIds']));
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['friendIds'])
+            && onlyMeChangedFriends());
       allow delete: if isOperator();
     }
 
-    // ── Leaderboards ── (entries are denormalised; public read)
+    // ?? Leaderboards ?? (denormalised entries; public read)
     match /leaderboards/{gameId}/entries/{uid} {
       allow read: if true;
-      allow create, update: if signedIn() && request.auth.uid == uid
+      allow create, update: if isOwner(uid)
         && request.resource.data.best is number
         && request.resource.data.best >= 0
-        && request.resource.data.best <= 10000000;
+        && request.resource.data.best <= 10000000
+        && request.resource.data.plays is number
+        && request.resource.data.plays >= 0
+        && request.resource.data.username is string
+        && request.resource.data.username.size() <= 20
+        && request.resource.data.avatarColor is string
+        && request.resource.data.avatarColor.size() <= 16;
       allow delete: if isOperator();
     }
 
-    // ── Chat messages (14-day TTL — enable TTL policy on field `expireAt`) ──
-    // DM channels look like 'dm:uidA::uidB' with the pair sorted — a message is
-    // readable/writable only by its two participants (or the operator).
-    function dmRegex() {
-      return '^dm:(' + request.auth.uid + '::[A-Za-z0-9_-]+|[A-Za-z0-9_-]+::' + request.auth.uid + ')$'
-    }
-    function channelAllowed(channel) {
-      return channel == 'global' || channel.matches(dmRegex())
-    }
+    // ?? Chat messages (14-day TTL - enable TTL policy on field `expireAt`) ??
+    // DM channels are readable/writable only by their two participants (or operator).
     match /messages/{id} {
-      allow read: if signedIn() && channelAllowed(resource.data.channel);
+      allow read: if signedIn() && (channelAllowed(resource.data.channel) || isOperator());
       allow create: if signedIn()
         && request.resource.data.from == request.auth.uid
         && channelAllowed(request.resource.data.channel)
         && request.resource.data.text is string
         && request.resource.data.text.size() <= 500
-        && request.resource.data.channel is string;
-      // Senders can update only readBy (seen receipts); deletes by sender or operator
+        && request.resource.data.channel is string
+        && request.resource.data.ts is number;
+      // Senders/recipients may ONLY update readBy (seen receipts); deletes by sender or operator
       allow update: if signedIn() && channelAllowed(resource.data.channel)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']);
       allow delete: if signedIn()
         && (resource.data.from == request.auth.uid || isOperator());
     }
 
-    // ── Friend requests & friendships ──
+    // ?? Friend requests ??
     match /friendRequests/{id} {
       allow read: if signedIn();
-      allow create: if signedIn() && request.resource.data.from == request.auth.uid;
+      allow create: if signedIn()
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.to is string
+        && request.resource.data.to != request.auth.uid;
       allow update: if isOperator()
+        || (signedIn()
+            && (resource.data.to == request.auth.uid || resource.data.from == request.auth.uid)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'resolvedAt']));
+      allow delete: if isOperator()
         || (signedIn() && (resource.data.to == request.auth.uid || resource.data.from == request.auth.uid));
-      allow delete: if isOperator() || (signedIn() && (resource.data.to == request.auth.uid || resource.data.from == request.auth.uid));
     }
 
-    // ── Friendships live on the user doc (friendIds) — see /users rules ──
-
-    // ── Notifications ──
+    // ?? Notifications ??
     match /notifications/{id} {
       allow read: if signedIn() && (
-        resource.data.scope == 'global' ||
-        request.auth.uid in resource.data.targets ||
-        isOperator()
+        resource.data.scope == 'global'
+        || request.auth.uid in resource.data.targets
+        || isOperator()
       );
+      // Only the operator may publish globally; anyone signed in may target specific users.
       allow create: if signedIn()
-        && (request.resource.data.scope != 'global' || isOperator())   // only the operator broadcasts globally
+        && (request.resource.data.scope == 'private'
+            || (request.resource.data.scope == 'global' && isOperator()))
         && request.resource.data.title is string
         && request.resource.data.title.size() <= 120
         && request.resource.data.body is string
-        && request.resource.data.body.size() <= 500;
+        && request.resource.data.body.size() <= 500
+        && request.resource.data.targets is list;
       allow update: if signedIn()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']);
       allow delete: if isOperator();
     }
 
-    // ── Site settings (maintenance, announcement) ──
+    // ?? Site settings (maintenance, announcement) ??
     match /settings/{doc} {
       allow read: if true;              // maintenance flag must be readable pre-login
       allow write: if isOperator();
     }
 
-    // ── Contact inbox (form submissions) ──
+    // ?? Contact inbox (form submissions) ??
     match /contactMessages/{id} {
       allow read: if isOperator();
-      allow create: if true;            // anyone may send a message (validated client-side + honeypot)
+      allow create: if request.resource.data.name is string
+        && request.resource.data.name.size() <= 120
+        && request.resource.data.email is string
+        && request.resource.data.email.size() <= 200
+        && request.resource.data.subject is string
+        && request.resource.data.subject.size() <= 160
+        && request.resource.data.message is string
+        && request.resource.data.message.size() <= 2000;
       allow update, delete: if isOperator();
     }
 
-    // ── Default deny ──
+    // ?? Default deny ??
     match /{document=**} {
       allow read, write: if false;
     }
   }
 }
+

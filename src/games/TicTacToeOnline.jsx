@@ -135,6 +135,7 @@ export default function TicTacToeOnline() {
     try {
       const res = await emitAck(sock, 'room:create', { game: 'tictactoe' })
       if (res?.error) throw new Error(res.error)
+      setRoom(res.state || null)
       setScreen('online')
       sfx.select()
     } catch (e) {
@@ -150,6 +151,7 @@ export default function TicTacToeOnline() {
     try {
       const res = await emitAck(sock, 'room:join', { game: 'tictactoe', code: code.trim().toUpperCase() })
       if (res?.error) throw new Error(res.error)
+      setRoom(res.state || null)
       setScreen('online')
       sfx.select()
     } catch (e) {
@@ -371,3 +373,4 @@ export default function TicTacToeOnline() {
     </div>
   )
 }
+

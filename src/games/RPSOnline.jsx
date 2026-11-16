@@ -87,6 +87,7 @@ export default function RPSOnline() {
     try {
       const res = await emitAck(sock, 'room:create', { game: 'rpsonline' })
       if (res?.error) throw new Error(res.error)
+      setRoom(res.state || null)
       setScreen('online'); sfx.select()
     } catch (e) { setRoomError(e.userMessage || e.message || 'Could not create the room.') } finally { setBusy(false) }
   }, [attachSocket])
@@ -99,6 +100,7 @@ export default function RPSOnline() {
     try {
       const res = await emitAck(sock, 'room:join', { game: 'rpsonline', code: code.trim().toUpperCase() })
       if (res?.error) throw new Error(res.error)
+      setRoom(res.state || null)
       setScreen('online'); sfx.select()
     } catch (e) { setRoomError(e.userMessage || e.message || 'Could not join that room.') } finally { setBusy(false) }
   }, [attachSocket])
@@ -293,3 +295,4 @@ export default function RPSOnline() {
     </div>
   )
 }
+

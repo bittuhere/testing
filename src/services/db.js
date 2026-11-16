@@ -248,7 +248,7 @@ export async function signInWithIdentifier(identifier, password) {
 
   const emailToUse = gate.email || (id.includes('@') ? id : null)
   if (!emailToUse) {
-    throw err('Please sign in with your email address. (Username sign-in needs the multiplayer server — see server/README.md.)')
+    throw err('Username sign-in can’t reach the Arcade Hub server right now (it may be waking up — try again in ~30 seconds). Or sign in with your email instead.')
   }
   try {
     const cred = await signInWithEmailAndPassword(auth, emailToUse, password)
@@ -261,6 +261,9 @@ export async function signInWithIdentifier(identifier, password) {
     return { ...profile, online: true, lastSeen: now() }
   } catch (e) {
     if (e?.userMessage) throw e
+    if (e?.code === 'auth/operation-not-allowed') {
+      throw err('Email/password sign-in is not enabled on this Firebase project yet. Use Continue with Google.', e)
+    }
     if (e?.code === 'auth/user-not-found' || e?.code === 'auth/invalid-credential' || e?.code === 'auth/wrong-password') {
       throw err('Incorrect password or account not found. Please try again.', e)
     }
@@ -1090,3 +1093,4 @@ export async function saveFcmToken(token) {
     return false
   }
 }
+
