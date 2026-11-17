@@ -71,7 +71,7 @@ export default function Login() {
       placeholder: seed || 'you@example.com',
       defaultValue: seed,
       confirmText: 'Send reset link',
-      validate: (v) => (validateEmail(v).ok ? null : 'Enter a valid email address.'),
+      validate: (v) => (validateEmail(v).ok ? true : 'Enter a valid email address.'),
     })
     if (!email) return
     try {
@@ -172,3 +172,4 @@ export default function Login() {
     </div>
   )
 }
+

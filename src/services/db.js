@@ -207,11 +207,15 @@ async function verifyPasswordGate(id, password) {
       body: JSON.stringify({ identifier: id, password }),
     })
     const data = await res.json().catch(() => ({}))
-    if (!res.ok) return { denied: false, email: null } // server trouble — Firebase decides
-    if (data?.ok === false) return { denied: true, email: null }
-    return { denied: false, email: typeof data?.email === 'string' ? data.email : null }
+    if (!res.ok) return { denied: false, email: null, providers: null } // server trouble — Firebase decides
+    if (data?.ok === false) return { denied: true, email: null, providers: null }
+    return {
+      denied: false,
+      email: typeof data?.email === 'string' ? data.email : null,
+      providers: Array.isArray(data?.providers) ? data.providers : null,
+    }
   } catch {
-    return { denied: false, email: null } // unreachable — Firebase decides
+    return { denied: false, email: null, providers: null } // unreachable — Firebase decides
   }
 }
 
@@ -264,8 +268,18 @@ export async function signInWithIdentifier(identifier, password) {
     if (e?.code === 'auth/operation-not-allowed') {
       throw err('Email/password sign-in is not enabled on this Firebase project yet. Use Continue with Google.', e)
     }
-    if (e?.code === 'auth/user-not-found' || e?.code === 'auth/invalid-credential' || e?.code === 'auth/wrong-password') {
-      throw err('Incorrect password or account not found. Please try again.', e)
+    if (e?.code === 'auth/too-many-requests') {
+      throw err('Too many attempts — wait a minute and try again.', e)
+    }
+    if (e?.code === 'auth/user-not-found' || e?.code === 'auth/invalid-credential' || e?.code === 'auth/wrong-password' || e?.code === 'auth/invalid-email') {
+      const providers = gate?.providers
+      if (Array.isArray(providers) && providers.length > 0 && !providers.includes('password')) {
+        throw err('This account was created with Google — no password is set for it yet. Use “Continue with Google” to sign in.', e)
+      }
+      if (Array.isArray(providers) && providers.includes('password')) {
+        throw err('Incorrect password. Please try again — or use “Forgot password” to reset it.', e)
+      }
+      throw err('We couldn’t sign you in with that password. If this account was created with Google, tap “Continue with Google” — otherwise double-check your password (or use “Forgot password”).', e)
     }
     throw err('Could not sign you in. Please try again.', e)
   }
@@ -325,19 +339,25 @@ export async function completeGoogleProfile({ username, password }) {
   } catch (e) {
     throw err('Could not create your profile. Please try again.', e)
   }
+  let passwordLinked = true
   try {
     await linkWithCredential(user, EmailAuthProvider.credential(email, password))
   } catch (e) {
-    if (e?.code === 'auth/provider-already-linked' || e?.code === 'auth/credential-already-in-use') {
-      // Account already had a password — that's fine, sign-in keeps working via Google
-    } else if (e?.code === 'auth/requires-recent-login') {
-      // Not fatal: profile exists, app password stored. They can also keep using Google.
-      console.warn('Could not link password credential (needs recent login).', e)
+    const code = e?.code || ''
+    if (code === 'auth/provider-already-linked' || code === 'auth/credential-already-in-use') {
+      // Account already had a password — fine, Google + password both work.
+    } else if (code === 'auth/weak-password') {
+      passwordLinked = false
+      console.warn('[auth] Password not linked (too weak). Account works with Google only.')
+    } else if (code === 'auth/requires-recent-login') {
+      passwordLinked = false
+      console.warn('[auth] Password not linked (needs recent login) — sign in with Google to set it again.')
     } else {
-      console.warn('Password linking failed:', e)
+      passwordLinked = false
+      console.warn('[auth] Password linking failed:', code, e)
     }
   }
-  return publicProfile(profile)
+  return { ...publicProfile(profile), passwordLinked }
 }
 
 export async function signOutUser() {
@@ -374,7 +394,7 @@ export function subscribeAuth(cb) {
   }
   return onAuthStateChanged(auth, async (user) => {
     if (!user) return cb(null)
-    try { cb(await getProfile(user.uid)) } catch { cb(null) }
+    try { cb(await getProfile(user.uid)) } catch (e) { console.error('[auth] could not load profile:', e); cb(null) }
   })
 }
 

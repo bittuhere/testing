@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUI } from '../context/UIContext.jsx'
-import { getSocket, emitAck, isSocketConfigured } from '../services/socket.js'
+import { getSocket, emitAck, isSocketConfigured, normalizeRoomState } from '../services/socket.js'
 import { listFriends, sendGameInvite } from '../services/db.js'
 import { RockIcon, PaperIcon, ScissorsIcon, RpsChoice, rpsWinner } from '../components/RpsIcons.jsx'
 import { sfx } from '../services/sfx.js'
@@ -69,7 +69,7 @@ export default function RPSOnline() {
     if (!isSocketConfigured) return null
     const sock = getSocket({ uid: profile.uid, username: profile.username })
     socketRef.current = sock
-    sock.on('room:state', (state) => setRoom(state))
+    sock.on('room:state', (state) => setRoom(normalizeRoomState(state)))
     sock.on('room:event', (evt) => {
       if (evt.type === 'notice') toast(evt.message || 'Connected.', 'info')
     })
@@ -87,7 +87,7 @@ export default function RPSOnline() {
     try {
       const res = await emitAck(sock, 'room:create', { game: 'rpsonline' })
       if (res?.error) throw new Error(res.error)
-      setRoom(res.state || null)
+      setRoom(normalizeRoomState(res.state) || null)
       setScreen('online'); sfx.select()
     } catch (e) { setRoomError(e.userMessage || e.message || 'Could not create the room.') } finally { setBusy(false) }
   }, [attachSocket])
@@ -100,7 +100,7 @@ export default function RPSOnline() {
     try {
       const res = await emitAck(sock, 'room:join', { game: 'rpsonline', code: code.trim().toUpperCase() })
       if (res?.error) throw new Error(res.error)
-      setRoom(res.state || null)
+      setRoom(normalizeRoomState(res.state) || null)
       setScreen('online'); sfx.select()
     } catch (e) { setRoomError(e.userMessage || e.message || 'Could not join that room.') } finally { setBusy(false) }
   }, [attachSocket])
@@ -136,7 +136,9 @@ export default function RPSOnline() {
     } catch (e) { toast(e?.userMessage || 'Could not send the invite.', 'error') }
   }, [inviteTarget, room?.code, friends, toast])
 
-  const mySlot = room?.players?.find((p) => p.uid === profile?.uid)?.slot // 'X' | 'O'
+  // Belt-and-braces: room.players is normalised to an array at every setRoom site; guard the render too.
+  const players = Array.isArray(room?.players) ? room.players : []
+  const mySlot = players.find((p) => p.uid === profile?.uid)?.slot // 'X' | 'O'
   const myChoiceMade = room?.choicesMade?.[mySlot]
   const pick = useCallback((choice) => {
     if (!room || myChoiceMade || room.matchWinner) return
@@ -251,14 +253,14 @@ export default function RPSOnline() {
       {room && (
         <>
           <div className="ttt-players-row">
-            {room.players.map((p) => (
+            {players.map((p) => (
               <div key={p.uid} className="ttt-player-chip">
                 <Swords size={16} />
                 <span className="ttt-player-name">@{p.username}{p.uid === profile?.uid ? ' (you)' : ''}</span>
                 {room.matchWinner && room.matchWinner === p.slot && <Crown size={14} className="crown" />}
               </div>
             ))}
-            {room.players.length < 2 && <div className="ttt-player-chip waiting"><Hand size={17} /><span className="ttt-player-name">Waiting…</span></div>}
+            {players.length < 2 && <div className="ttt-player-chip waiting"><Hand size={17} /><span className="ttt-player-name">Waiting…</span></div>}
           </div>
 
           <div className="score-pill"><span>YOU {mySlot ? room.wins?.[mySlot] ?? 0 : 0}</span><Swords size={15} /><span>THEM {mySlot ? room.wins?.[mySlot === 'X' ? 'O' : 'X'] ?? 0 : 0}</span></div>

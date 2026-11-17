@@ -71,4 +71,22 @@ export function emitAck(sock, event, payload, timeoutMs = 8000) {
   })
 }
 
+/**
+ * The server sends state.players as a seat map: { X: {uid, username}|null, O: {uid, username}|null }.
+ * The room UI renders an array and reads .slot / .find / .length — normalise here so both
+ * shapes can never crash the screen (that was the "players.find is not a function" crash).
+ */
+export function normalizeRoomState(state) {
+  if (!state) return state
+  const seat = state.players
+  if (seat && !Array.isArray(seat) && typeof seat === 'object') {
+    const players = []
+    if (seat.X) players.push({ ...seat.X, slot: 'X' })
+    if (seat.O) players.push({ ...seat.O, slot: 'O' })
+    return { ...state, players }
+  }
+  return state
+}
+
 export { isSocketConfigured }
+

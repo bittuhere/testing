@@ -57,9 +57,13 @@ export default function CompleteProfile() {
     if (password !== confirmPassword) return setError('Passwords do not match.')
     setBusy(true)
     try {
-      await completeGoogleProfile({ username: vUser.value, password })
+      const result = await completeGoogleProfile({ username: vUser.value, password })
       sfx.win()
-      toast('Profile complete — welcome to the arcade!', 'success')
+      if (result?.passwordLinked === false) {
+        toast('Profile complete! Heads up: your password couldn’t be set on this Google account — sign in with “Continue with Google” (or try setting the password again later).', 'info')
+      } else {
+        toast('Profile complete — welcome to the arcade!', 'success')
+      }
       navigate('/', { replace: true })
     } catch (err) {
       setError(err?.userMessage || 'Could not complete your profile. Please try again.')
@@ -157,3 +161,4 @@ export default function CompleteProfile() {
     </div>
   )
 }
+

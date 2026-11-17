@@ -1,5 +1,7 @@
 # Optional: build Arcade Hub and deploy to GitHub Pages with every push to main.
+# One-time setup: repo Settings → Pages → Source → "GitHub Actions".
 name: Deploy Arcade Hub to Pages
+
 on:
   push:
     branches: [main]

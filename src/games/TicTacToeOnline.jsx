@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUI } from '../context/UIContext.jsx'
-import { getSocket, emitAck, isSocketConfigured } from '../services/socket.js'
+import { getSocket, emitAck, isSocketConfigured, normalizeRoomState } from '../services/socket.js'
 import { listFriends, sendGameInvite } from '../services/db.js'
 import { sfx } from '../services/sfx.js'
 import { Users, Bot, Copy, Check, UserRound, Wifi, WifiOff, Send, RefreshCcw, DoorOpen, Crown } from 'lucide-react'
@@ -112,7 +112,7 @@ export default function TicTacToeOnline() {
     if (!isSocketConfigured) return null
     const sock = getSocket({ uid: profile.uid, username: profile.username })
     socketRef.current = sock
-    sock.on('room:state', (state) => setRoom(state))
+    sock.on('room:state', (state) => setRoom(normalizeRoomState(state)))
     sock.on('room:event', (evt) => {
       if (evt.type === 'chat') {
         setRoomChat((prev) => [...prev.slice(-29), evt])
@@ -135,7 +135,7 @@ export default function TicTacToeOnline() {
     try {
       const res = await emitAck(sock, 'room:create', { game: 'tictactoe' })
       if (res?.error) throw new Error(res.error)
-      setRoom(res.state || null)
+      setRoom(normalizeRoomState(res.state) || null)
       setScreen('online')
       sfx.select()
     } catch (e) {
@@ -151,7 +151,7 @@ export default function TicTacToeOnline() {
     try {
       const res = await emitAck(sock, 'room:join', { game: 'tictactoe', code: code.trim().toUpperCase() })
       if (res?.error) throw new Error(res.error)
-      setRoom(res.state || null)
+      setRoom(normalizeRoomState(res.state) || null)
       setScreen('online')
       sfx.select()
     } catch (e) {
@@ -200,7 +200,10 @@ export default function TicTacToeOnline() {
     setChatDraft('')
   }, [chatDraft, room?.code])
 
-  const mySlot = room?.players?.find((p) => p.uid === profile?.uid)?.slot
+  // Belt-and-braces: never trust room.players' shape in render (server sends a seat map; we normalise,
+  // but if that ever changes again the UI degrades to an empty list instead of crashing the whole app).
+  const players = Array.isArray(room?.players) ? room.players : []
+  const mySlot = players.find((p) => p.uid === profile?.uid)?.slot
   const isMyTurn = room && room.started && !room.winner && room.turn === mySlot
 
   const onlineMove = useCallback((index) => {
@@ -322,19 +325,19 @@ export default function TicTacToeOnline() {
       {room && (
         <>
           <div className="ttt-players-row">
-            {room.players.map((p) => (
+            {players.map((p) => (
               <div key={p.uid} className={`ttt-player-chip ${room.turn === p.slot && room.started && !room.winner ? 'turn' : ''}`}>
                 <span className={`ttt-slot slot-${p.slot}`}>{p.slot}</span>
                 <span className="ttt-player-name">@{p.username}{p.uid === profile?.uid ? ' (you)' : ''}</span>
                 {room.winner && room.winner !== 'draw' && room.winner === p.slot && <Crown size={14} className="crown" />}
               </div>
             ))}
-            {room.players.length < 2 && <div className="ttt-player-chip waiting"><UserRound size={17} /><span className="ttt-player-name">Waiting…</span></div>}
+            {players.length < 2 && <div className="ttt-player-chip waiting"><UserRound size={17} /><span className="ttt-player-name">Waiting…</span></div>}
           </div>
 
           <p className="ttt-turn-line">
             {!room.started && 'The match begins when your opponent joins.'}
-            {room.started && !room.winner && (isMyTurn ? 'Your move — place the mark.' : `Waiting for @${room.players.find((p) => p.slot === room.turn)?.username || 'opponent'}…`)}
+            {room.started && !room.winner && (isMyTurn ? 'Your move — place the mark.' : `Waiting for @${players.find((p) => p.slot === room.turn)?.username || 'opponent'}…`)}
             {room.winner === 'draw' && 'A perfect draw. Run it back?'}
             {room.winner && room.winner !== 'draw' && (mySlot === room.winner ? 'Victory is yours!' : 'Defeat… this time.')}
           </p>

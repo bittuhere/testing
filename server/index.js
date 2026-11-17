@@ -320,6 +320,19 @@ function vpAllow(ip) {
   return true
 }
 
+const idIsEmail = (v) => String(v || '').includes('@')
+
+// Best-effort provider probe (e.g. ['google.com'] vs ['password','google.com']).
+// Never throws — null means "unknown, client falls back to generic messaging".
+// Lets the client explain WHY a password fails for Google-only accounts.
+async function providersFor(email) {
+  try {
+    if (!admin || !email) return null
+    const u = await admin.auth().getUserByEmail(String(email).trim().toLowerCase())
+    return (u.providerData || []).map((p) => p.providerId)
+  } catch { return null }
+}
+
 app.post('/verify-password', async (req, res) => {
   const identifier = String(req.body?.identifier || '').trim().toLowerCase().slice(0, 320)
   const password = String(req.body?.password || '')
@@ -346,18 +359,18 @@ app.post('/verify-password', async (req, res) => {
         }
       }
     }
-    if (!uid) return res.json({ ok: true, email: null }) // unknown account — let Firebase produce the error
+    if (!uid) return res.json({ ok: true, email: null, providers: idIsEmail(identifier) ? await providersFor(identifier) : null }) // unknown account — let Firebase produce the error
 
     const secretRef = store.doc('secrets/' + uid)
     const secretSnap = await secretRef.get()
-    if (!secretSnap.exists) return res.json({ ok: true, email }) // Firebase is the only gate
+    if (!secretSnap.exists) return res.json({ ok: true, email, providers: await providersFor(email) }) // Firebase is the only gate
     const appHash = String(secretSnap.data()?.appHash || '')
     const sha256 = sha256Hex(password)
-    if (appHash === sha256) return res.json({ ok: true, email })
+    if (appHash === sha256) return res.json({ ok: true, email, providers: await providersFor(email) })
     if (appHash === sha1Hex(password)) {
       await secretRef.set({ appHash: sha256, migratedFrom: 'sha1' }, { merge: true })
       console.log(`[verify-password] migrated SHA-1 → SHA-256 for uid ${uid}`)
-      return res.json({ ok: true, email, migrated: true })
+      return res.json({ ok: true, email, migrated: true, providers: await providersFor(email) })
     }
     return res.json({ ok: false, error: 'Incorrect password. Please try again.' })
   } catch (err) {
@@ -617,3 +630,4 @@ setInterval(() => {
 server.listen(PORT, () => {
   console.log(`[Arcade Hub] multiplayer server listening on :${PORT} (origins: ${ALLOWED_ORIGINS.join(', ')})`)
 })
+

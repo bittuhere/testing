@@ -73,8 +73,12 @@ export function UIProvider({ children }) {
     if (!dialog) return
     const v = promptValue
     if (dialog.validate) {
+      // Contract: return true (or nothing/null) when the value is OK,
+      // return a string with the error message when it is not. Anything
+      // else is treated as invalid with a generic message.
       const verdict = dialog.validate(v)
-      if (verdict !== true) { setPromptError(typeof verdict === 'string' ? verdict : 'That value is not valid.'); return }
+      if (verdict === true || verdict == null) { /* valid */ }
+      else { setPromptError(typeof verdict === 'string' ? verdict : 'That value is not valid.'); return }
     }
     closeDialog(v)
   }, [dialog, promptValue, closeDialog])
@@ -156,3 +160,4 @@ export function UIProvider({ children }) {
     </UIContext.Provider>
   )
 }
+
